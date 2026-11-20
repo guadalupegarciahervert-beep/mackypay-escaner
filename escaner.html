@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="es"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><title>MackyPay · Escáner IMEI</title>
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<style>:root{font-family:Arial,sans-serif;color:#eee;background:#101010}body{margin:0;padding:18px}.wrap{max-width:580px;margin:auto}header{background:#000;border-radius:12px;text-align:center;padding:16px;font-size:24px;font-weight:700}header span{color:#ffa500}.card{background:#222;border:1px solid #ffa500;border-radius:12px;padding:16px;margin-top:16px}#reader{width:100%;min-height:220px;background:#111;border-radius:8px;overflow:hidden}#reader video{max-width:100%}button{background:#ffa500;color:#111;border:0;border-radius:9px;padding:13px 16px;font-weight:700;margin:8px 5px 0 0}button.secondary{background:#444;color:#fff}p{line-height:1.45}.ok{color:#ffe3a3;word-break:break-word}#imei{font-size:22px;font-weight:700;letter-spacing:1px}</style></head>
+<body><div class="wrap"><header>Macky<span>Pay</span></header><div class="card"><h2>Escanear IMEI</h2><p>Apunta la cámara al <strong>código de barras del IMEI</strong> de la caja. No necesitas tomar fotografías.</p><div id="reader"></div><p id="estado" role="status">Preparando cámara…</p><div id="resultado" hidden><p>IMEI detectado:</p><p id="imei"></p><button id="enviar">USAR ESTE IMEI</button><button id="repetir" class="secondary">VOLVER A ESCANEAR</button></div><button id="cerrar" class="secondary">CERRAR LECTOR</button></div></div>
+<script>
+const estado=document.getElementById('estado'),resultado=document.getElementById('resultado');
+const token=new URL(location.href).searchParams.get('token')||'';
+let lector=null,activo=false,detectado='',iniciando=false;
+function extraerIMEI(texto){const t=String(texto||'').trim();if(/^\d{15}$/.test(t))return t;const coincidencias=[...t.matchAll(/(?:^|\D)(\d{15})(?!\d)/g)].map(x=>x[1]);return coincidencias.length===1?coincidencias[0]:null;}
+async function detener(){if(!lector)return;try{if(activo){await lector.stop();activo=false;}}catch(e){}try{lector.clear();}catch(e){}}
+async function iniciar(){if(iniciando)return;iniciando=true;resultado.hidden=true;estado.textContent='Solicitando permiso para la cámara…';
+ try{await detener();lector=new Html5Qrcode('reader',{verbose:false});
+ const opciones={fps:12,qrbox:(w,h)=>({width:Math.min(w-30,310),height:Math.min(h-30,200)}),aspectRatio:1.7778};
+ // Preferir cámara trasera; si el equipo no tiene, usar la primera disponible.
+ try{await lector.start({facingMode:'environment'},opciones,detectadoCodigo,()=>{});}catch(e){const camaras=await Html5Qrcode.getCameras();if(!camaras.length)throw e;await lector.start(camaras[0].id,opciones,detectadoCodigo,()=>{});}
+ activo=true;estado.textContent='Escaneando… apunta al código de barras del IMEI.';
+ }catch(e){estado.textContent='No se pudo abrir la cámara: '+(e.message||e)+'. Abre esta página en Chrome o Safari y permite la cámara.';}finally{iniciando=false;}}
+async function detectadoCodigo(codigo){if(detectado)return;const imei=extraerIMEI(codigo);if(!imei){estado.textContent='Código detectado, pero no es un IMEI único de 15 dígitos. Prueba otro código de la caja.';return;}detectado=imei;document.getElementById('imei').textContent=imei;resultado.hidden=false;estado.textContent='Comprueba el IMEI antes de enviarlo.';await detener();}
+document.getElementById('enviar').addEventListener('click',()=>{
+ if(!detectado)return;
+ if(window.opener&&!window.opener.closed){window.opener.postMessage({tipo:'MACKYPAY_IMEI',imei:detectado,token},'*');estado.textContent='IMEI enviado. Regresa a MackyPay para verificarlo.';window.close();}
+ else{estado.textContent='Tu navegador no permite devolver el IMEI automáticamente a la pestaña anterior. Copia el número mostrado y pégalo en MackyPay.';navigator.clipboard?.writeText(detectado).then(()=>{estado.textContent+=' Número copiado al portapapeles.';}).catch(()=>{});}
+});
+document.getElementById('repetir').addEventListener('click',()=>{detectado='';iniciar();});
+document.getElementById('cerrar').addEventListener('click',()=>window.close());
+if(!window.isSecureContext)estado.textContent='El escáner necesita HTTPS.';else if(typeof Html5Qrcode==='undefined')estado.textContent='No se cargó la biblioteca de escaneo. Revisa tu conexión.';else iniciar();
+</script></body></html>
